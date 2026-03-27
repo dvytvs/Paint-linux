@@ -1,6 +1,7 @@
 <div align="center">
 
-<img src="build/icons/linux/icon.png" alt="Linux Paint Logo" width="200" height="200" />
+<img width="512" height="512" alt="icon" src="https://github.com/user-attachments/assets/45b04c93-e6c6-48bd-b9a2-0af8f62554ed" />
+
 
 # Linux Paint
 
