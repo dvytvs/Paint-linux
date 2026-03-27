@@ -1,0 +1,5 @@
+{
+  "name": "Linux Paint",
+  "description": "A web-based clone of the modern Windows 11 Paint application, optimized for Linux and web browsers.",
+  "requestFramePermissions": []
+}
