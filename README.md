@@ -10,7 +10,7 @@
 **Cross-platform graphics editor inspired by Windows 11 Paint**
 
 [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com)
-[![License](https://img.shields.io/badge/license-GPL3.0-green.svg)](https://github.com)
+[![License](https://img.shields.io/badge/license-GPL3.0/MIT-green.svg)](https://github.com)
 [![Electron](https://img.shields.io/badge/Electron-40.8.0-47848F.svg?logo=electron)](https://www.electronjs.org/)
 [![React](https://img.shields.io/badge/React-19.0.0-61DAFB.svg?logo=react)](https://reactjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8.2-3178C6.svg?logo=typescript)](https://www.typescriptlang.org/)
