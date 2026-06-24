@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+body {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  
+  /* Make only the canvas visible */
+  .print-canvas, .print-canvas * {
+    visibility: visible;
+  }
+  
+  .print-canvas {
+    position: absolute;
+    left: 0;
+    top: 0;
+    margin: 0;
+    padding: 0;
+    transform: none !important;
+    box-shadow: none !important;
+  }
+
+  /* Hide scrollbars and backgrounds */
+  body {
+    background: white !important;
+    margin: 0;
+    padding: 0;
+  }
+}

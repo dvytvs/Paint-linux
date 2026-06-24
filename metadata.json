@@ -1,0 +1,5 @@
+{
+  "name": "Linux Paint",
+  "description": "A copy of Paint from Windows 11 for GNU/Linux",
+  "requestFramePermissions": []
+}
