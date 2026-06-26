@@ -1,3 +1,42 @@
+> [!WARNING]
+> ## ⚠️ IMPORTANT / ВАЖНО
+>
+> **English**
+>
+> There is an **unofficial and plagiarized** Snap package called **paint-linux**:
+> https://snapcraft.io/paint-linux
+>
+> **I am NOT the publisher of this package.**
+>
+> This package directly **violates the MIT and GPL-3.0 licenses** under which this project is released. The publisher has stolen the original code, hidden the source files, and turned an open-source project into closed-source proprietary software. 
+>
+> I am always open to legitimate forks, but you **must** credit the original author and keep the source code open, as strictly required by the licenses. Simply stealing and closing the code is illegal and unacceptable.
+>
+> **Do NOT download or support this fraudulent package.**
+>
+> The **only official and safe Snap package** is:
+> https://snapcraft.io/paint
+>
+> ---
+>
+> **Русский**
+>
+> В Snap Store существует **неофициальный и ворованный** пакет **paint-linux**:
+> https://snapcraft.io/paint-linux
+>
+> **Я НЕ являюсь издателем этого пакета.**
+>
+> Этот пакет напрямую **нарушает лицензии MIT и GPL-3.0**, под которыми распространяется мой проект. Издатель просто украл чужой труд, скрыл исходный код и превратил open-source проект в закрытую проприетарщину.
+>
+> Я абсолютно не против форков, но вы **обязаны** указывать оригинального автора и открывать код своих модификаций, как того жёстко требуют лицензии. Нагло воровать код и закрывать его — недопустимо.
+>
+> **Не скачивайте и не поддерживайте этот мошеннический пакет.**
+>
+> **Единственный официальный и безопасный Snap-пакет:**
+> https://snapcraft.io/paint
+
+
+
 <div align="center">
 
 <img width="512" height="512" alt="icon" src="https://github.com/user-attachments/assets/45b04c93-e6c6-48bd-b9a2-0af8f62554ed" />
