@@ -1,9 +1,20 @@
+# Зависимости
 node_modules/
-build/
+
+# Результаты сборки. dist-electron/ — это вывод electron-builder:
+# пакеты (.deb/.AppImage/...), linux-unpacked и сгенерированный кэш иконок
+# dist-electron/.icon-set. Ничего из этого в git не нужно — источник иконок
+# хранится в build/icons/linux/ (см. ниже).
 dist/
+dist-electron/
+
+# electron-builder resources: папку build игнорируем, но иконки приложения — нет
+build/*
+!build/icons/
+
 coverage/
 .DS_Store
 *.log
 .env*
 !.env.example
-dist-electron
+

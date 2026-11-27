@@ -5,7 +5,7 @@ import {
   Minus, Square, Circle, Triangle,
   Brush, ChevronDown, Sparkles, Layers,
   SquareDashed, Hexagon, Pentagon, Diamond, Star, MessageCircle,
-  LassoSelect, Maximize2, Trash2, ArrowRight, ArrowLeft, ArrowUp, ArrowDown, Heart, Zap, Cloud
+  LassoSelect, Maximize2, Trash2, ArrowRight, ArrowLeft, ArrowUp, ArrowDown, Heart, Zap, Cloud, Check
 } from 'lucide-react';
 import { Tool } from '../types';
 import { t } from '../i18n';
@@ -21,6 +21,8 @@ interface ToolbarProps {
   setActiveColorSlot: (slot: 1 | 2) => void;
   strokeSize: number;
   setStrokeSize: (s: number) => void;
+  transparentSelection: boolean;
+  setTransparentSelection: (v: boolean) => void;
 }
 
 const ToolBtn = ({ icon, active, onClick, label }: { icon: React.ReactNode, active: boolean, onClick: () => void, label?: string }) => (
@@ -38,7 +40,8 @@ export default function Toolbar({
   primaryColor, setPrimaryColor,
   secondaryColor, setSecondaryColor,
   activeColorSlot, setActiveColorSlot,
-  strokeSize, setStrokeSize
+  strokeSize, setStrokeSize,
+  transparentSelection, setTransparentSelection
 }: ToolbarProps) {
   const brushesRef = React.useRef<HTMLButtonElement>(null);
   const brushesMenuRef = React.useRef<HTMLDivElement>(null);
@@ -50,9 +53,39 @@ export default function Toolbar({
   const selectionRef = React.useRef<HTMLButtonElement>(null);
   const selectionMenuRef = React.useRef<HTMLDivElement>(null);
   const [customColors, setCustomColors] = React.useState<string[]>(() => {
-    const saved = localStorage.getItem('paint-custom-colors');
-    return saved ? JSON.parse(saved) : Array(10).fill('transparent');
+    let parsed: string[] = [];
+    try {
+      const saved = localStorage.getItem('paint-custom-colors');
+      parsed = saved ? JSON.parse(saved) : [];
+    } catch {
+      parsed = [];
+    }
+    // Older builds could store duplicates (e.g. a whole run of shades) because the
+    // colour input fired on every intermediate value. Normalise what we load.
+    const unique = Array.from(new Set((Array.isArray(parsed) ? parsed : []).filter(c => typeof c === 'string' && c)))
+      .slice(0, 10);
+    while (unique.length < 10) unique.push('transparent');
+    return unique;
   });
+
+  // Adds a colour to the custom palette exactly once (no duplicates).
+  const addColorToPalette = React.useCallback((newColor: string) => {
+    if (!newColor) return;
+    setCustomColors(prev => {
+      const next = [newColor, ...prev.filter(c => c !== newColor)].slice(0, 10);
+      while (next.length < 10) next.push('transparent');
+      localStorage.setItem('paint-custom-colors', JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  // <input type="color"> fires "change" continuously while the user drags inside the
+  // picker. The colour itself has to update live, but the palette must be updated once,
+  // after the last change (otherwise the palette row turns into a gradient).
+  const paletteCommitTimer = React.useRef<number | null>(null);
+  React.useEffect(() => () => {
+    if (paletteCommitTimer.current !== null) window.clearTimeout(paletteCommitTimer.current);
+  }, []);
 
   React.useEffect(() => {
     if (currentTool === 'eraser') {
@@ -65,16 +98,11 @@ export default function Toolbar({
   React.useEffect(() => {
     const handleAddColor = (e: Event) => {
       const customEvent = e as CustomEvent;
-      const newColor = customEvent.detail;
-      const newCustomColors = [...customColors];
-      newCustomColors.unshift(newColor);
-      newCustomColors.pop();
-      setCustomColors(newCustomColors);
-      localStorage.setItem('paint-custom-colors', JSON.stringify(newCustomColors));
+      addColorToPalette(customEvent.detail);
     };
     window.addEventListener('add-custom-color', handleAddColor);
     return () => window.removeEventListener('add-custom-color', handleAddColor);
-  }, [customColors]);
+  }, [addColorToPalette]);
 
   React.useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -114,12 +142,12 @@ export default function Toolbar({
     const newColor = e.target.value;
     if (activeColorSlot === 1) setPrimaryColor(newColor);
     else setSecondaryColor(newColor);
-    
-    const newCustomColors = [...customColors];
-    newCustomColors.unshift(newColor);
-    newCustomColors.pop();
-    setCustomColors(newCustomColors);
-    localStorage.setItem('paint-custom-colors', JSON.stringify(newCustomColors));
+
+    if (paletteCommitTimer.current !== null) window.clearTimeout(paletteCommitTimer.current);
+    paletteCommitTimer.current = window.setTimeout(() => {
+      addColorToPalette(newColor);
+      paletteCommitTimer.current = null;
+    }, 450);
   };
 
   const colors = [
@@ -181,8 +209,12 @@ export default function Toolbar({
             <button className="w-full flex items-center px-4 py-1.5 hover:bg-white/10 text-left text-gray-500" disabled>
               <div className="flex items-center"><SquareDashed size={16} className="mr-3" /> {t('action.invertSelect')}</div>
             </button>
-            <button className="w-full flex items-center px-4 py-1.5 hover:bg-white/10 text-left">
-              <div className="w-4 mr-3" /> {t('action.transparentSelect')}
+            <button
+              className={`w-full flex items-center px-4 py-1.5 hover:bg-white/10 text-left ${transparentSelection ? 'bg-[#4cc2ff]/20' : ''}`}
+              onClick={() => setTransparentSelection(!transparentSelection)}
+              title={t('action.transparentSelect')}
+            >
+              {transparentSelection ? <Check size={16} className="mr-3" /> : <div className="w-4 mr-3" />} {t('action.transparentSelect')}
             </button>
             <button className="w-full flex items-center px-4 py-1.5 hover:bg-white/10 text-left justify-between" onClick={() => { setIsSelectionOpen(false); }}>
               <div className="flex items-center"><Trash2 size={16} className="mr-3" /> {t('action.delete')}</div>
@@ -301,18 +333,33 @@ export default function Toolbar({
               left: sizeRef.current.getBoundingClientRect().left + window.scrollX
             }}
           >
-            {[1, 3, 5, 8].map(size => (
+            {[1, 2, 3, 5, 8, 12, 20, 35].map(size => (
               <button
                 key={size}
-                className={`w-full flex items-center justify-center px-4 py-2 hover:bg-white/10 ${strokeSize === size ? 'bg-[#4cc2ff]/20' : ''}`}
+                className={`w-full flex items-center justify-center px-4 py-1.5 hover:bg-white/10 ${strokeSize === size ? 'bg-[#4cc2ff]/20' : ''}`}
                 onClick={() => {
                   setStrokeSize(size);
                   setIsSizeOpen(false);
                 }}
               >
-                <div className="w-20 bg-white rounded-full" style={{ height: size + 'px' }}></div>
+                <div className="w-20 bg-white rounded-full" style={{ height: Math.min(size, 35) + 'px' }}></div>
               </button>
             ))}
+            <div className="px-2 py-1.5 border-t border-white/10 flex items-center gap-1">
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={strokeSize}
+                onChange={(e) => {
+                  const value = parseInt(e.target.value, 10);
+                  if (!Number.isNaN(value)) setStrokeSize(Math.max(1, Math.min(100, value)));
+                }}
+                onKeyDown={(e) => { if (e.key === 'Enter') setIsSizeOpen(false); }}
+                className="w-14 bg-[#1e1e1e] border border-[#404040] rounded px-1.5 py-0.5 text-xs text-gray-200"
+              />
+              <span className="text-[11px] text-gray-400">px</span>
+            </div>
           </div>
         )}
       </div>
@@ -409,13 +456,7 @@ export default function Toolbar({
               title={t('ui.addColor')}
               onClick={() => {
                 const newColor = activeColorSlot === 1 ? primaryColor : secondaryColor;
-                const newCustomColors = [...customColors];
-                if (!newCustomColors.includes(newColor)) {
-                  newCustomColors.unshift(newColor);
-                  newCustomColors.pop();
-                  setCustomColors(newCustomColors);
-                  localStorage.setItem('paint-custom-colors', JSON.stringify(newCustomColors));
-                }
+                addColorToPalette(newColor);
               }}
             >
               +

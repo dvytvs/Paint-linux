@@ -1,3 +1,8 @@
+/**
+ * Linux Paint — https://github.com/dvytvs/Paint-linux
+ * Copyright © 2026 dvytvs (https://github.com/dvytvs)
+ * SPDX-License-Identifier: GPL-3.0-only
+ */
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -6,10 +11,70 @@ const { exec } = require('child_process');
 
 let mainWindow;
 
+// ---------------------------------------------------------------------------
+// Linux display backend selection.
+//
+// On a Wayland session we want the native Wayland backend (no XWayland), on an
+// X11 session we keep the X11 backend. Relying on ozone's "auto" hint is not
+// enough in every environment (launching from a .desktop file, Flatpak, some
+// compositors), so the session is detected explicitly.
+//
+// The detection can always be overridden by the user:
+//   ELECTRON_OZONE_PLATFORM_HINT=wayland|x11   (official Electron variable)
+//   --ozone-platform=wayland|x11               (command line)
+// ---------------------------------------------------------------------------
+function detectWaylandSession() {
+  const sessionType = (process.env.XDG_SESSION_TYPE || '').toLowerCase();
+  const hasWaylandDisplay = Boolean(process.env.WAYLAND_DISPLAY);
+  const hasX11Display = Boolean(process.env.DISPLAY);
+
+  if (sessionType === 'wayland') return hasWaylandDisplay || !hasX11Display;
+  if (sessionType === 'x11') return false;
+  return hasWaylandDisplay;
+}
+
+function configureLinuxDisplayBackend() {
+  if (process.platform !== 'linux') return;
+
+  const isWayland = detectWaylandSession();
+
+  const hasOzoneArg = process.argv.some((arg) =>
+    arg === '--ozone-platform' ||
+    arg.startsWith('--ozone-platform=') ||
+    arg === '--ozone-platform-hint' ||
+    arg.startsWith('--ozone-platform-hint=')
+  );
+
+  if (!hasOzoneArg && !process.env.ELECTRON_OZONE_PLATFORM_HINT) {
+    // "wayland" => native Wayland; "auto" keeps the previous behaviour on X11.
+    app.commandLine.appendSwitch('ozone-platform-hint', isWayland ? 'wayland' : 'auto');
+  }
+
+  if (isWayland) {
+    // Text input (CJK/IME) in the Text tool works on Wayland only with this flag.
+    app.commandLine.appendSwitch('enable-wayland-ime');
+
+    // Merge instead of overwriting a possibly user-provided --enable-features.
+    const requested = app.commandLine.getSwitchValue('enable-features');
+    const features = new Set((requested || '').split(',').filter(Boolean));
+    features.add('WaylandWindowDecorations');
+    app.commandLine.appendSwitch('enable-features', Array.from(features).join(','));
+  }
+
+  if (process.env.NODE_ENV === 'development' || process.env.PAINT_DEBUG_DISPLAY === '1') {
+    console.log(
+      `[paint] display backend: ${isWayland ? 'wayland (native)' : 'x11/auto'} ` +
+      `| XDG_SESSION_TYPE=${process.env.XDG_SESSION_TYPE || 'unset'} ` +
+      `WAYLAND_DISPLAY=${process.env.WAYLAND_DISPLAY || 'unset'} ` +
+      `DISPLAY=${process.env.DISPLAY || 'unset'}`
+    );
+  }
+}
+
+configureLinuxDisplayBackend();
+
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-background-timer-throttling');
-app.commandLine.appendSwitch('enable-features', 'WaylandWindowDecorations');
-app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -124,7 +189,9 @@ ipcMain.handle('save-file', async (event, { dataUrl, defaultPath }) => {
     defaultPath: defaultPath || 'Untitled.png',
     filters: [
       { name: 'PNG Image', extensions: ['png'] },
-      { name: 'JPEG Image', extensions: ['jpg', 'jpeg'] }
+      { name: 'JPEG Image', extensions: ['jpg', 'jpeg'] },
+      { name: 'WebP Image', extensions: ['webp'] },
+      { name: 'BMP Image', extensions: ['bmp'] }
     ]
   });
   
@@ -135,6 +202,37 @@ ipcMain.handle('save-file', async (event, { dataUrl, defaultPath }) => {
   fs.writeFileSync(filePath, buffer);
   
   return filePath;
+});
+
+// The renderer needs to know the target path *before* encoding the image (the chosen
+// extension defines the format). Paths returned by the dialog are remembered so that
+// the following "write-file" call can only write to a user-picked location.
+const allowedWritePaths = new Set();
+
+ipcMain.handle('choose-save-path', async (event, defaultPath) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const { canceled, filePath } = await dialog.showSaveDialog(win, {
+    defaultPath: defaultPath || 'Untitled.png',
+    filters: [
+      { name: 'PNG Image', extensions: ['png'] },
+      { name: 'JPEG Image', extensions: ['jpg', 'jpeg'] },
+      { name: 'WebP Image', extensions: ['webp'] },
+      { name: 'BMP Image', extensions: ['bmp'] }
+    ]
+  });
+
+  if (canceled || !filePath) return null;
+  allowedWritePaths.add(filePath);
+  return filePath;
+});
+
+ipcMain.handle('write-file', async (event, { filePath, dataUrl }) => {
+  if (typeof filePath !== 'string' || !allowedWritePaths.has(filePath)) return false;
+  const base64Data = String(dataUrl || '').replace(/^data:[\w/+.-]+;base64,/, '');
+  if (!base64Data) return false;
+  const buffer = Buffer.from(base64Data, 'base64');
+  fs.writeFileSync(filePath, buffer);
+  return true;
 });
 
 ipcMain.handle('get-printers', async (event) => {
@@ -189,6 +287,12 @@ ipcMain.handle('share', async (event, dataUrl) => {
   fs.writeFileSync(tempPath, buffer);
   
   shell.showItemInFolder(tempPath);
+  return true;
+});
+
+ipcMain.handle('open-external', async (event, url) => {
+  if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return false;
+  await shell.openExternal(url);
   return true;
 });
 

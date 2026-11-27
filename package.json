@@ -1,10 +1,18 @@
 {
   "name": "paint",
-  "description": "A simple paint application for Linux",
-  "homepage": "https://paint.app",
-  "author": "Paint Team <info@paint.app>",
+  "description": "Paint for Linux — a graphics editor inspired by Windows 11 Paint",
+  "homepage": "https://github.com/dvytvs/Paint-linux",
+  "author": {
+    "name": "dvytvs",
+    "url": "https://github.com/dvytvs"
+  },
+  "license": "GPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dvytvs/Paint-linux.git"
+  },
   "private": true,
-  "version": "1.2.0",
+  "version": "1.3.0",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -15,6 +23,13 @@
     "lint": "tsc --noEmit",
     "start": "cross-env NODE_ENV=development concurrently \"npm run dev\" \"wait-on http://localhost:3000 && electron .\"",
     "dist": "npm run build && electron-builder",
+    "dist:appimage": "npm run build && electron-builder --linux AppImage",
+    "dist:deb": "npm run build && electron-builder --linux deb",
+    "dist:snap": "npm run build && electron-builder --linux snap",
+    "dist:pacman": "npm run build && electron-builder --linux pacman",
+    "dist:flatpak": "npm run build && electron-builder --linux flatpak",
+    "dist:tar": "npm run build && electron-builder --linux tar.gz",
+    "dist:dir": "npm run build && electron-builder --linux dir",
     "dist:rpm": "npm run build && electron-builder --linux rpm",
     "dist:rpm:docker": "docker run --rm -v \"$PWD\":/project -w /project electronuserland/builder:18 bash -c \"npm install && npm run dist:rpm && chown -R $(id -u):$(id -g) dist-electron/ node_modules/\""
   },
@@ -46,6 +61,7 @@
   "build": {
     "appId": "com.linuxpaint.app",
     "productName": "Paint",
+    "copyright": "Copyright © 2026 dvytvs (https://github.com/dvytvs)",
     "fileAssociations": [
       {
         "ext": "png",
@@ -92,7 +108,7 @@
       ],
       "icon": "build/icons/linux/",
       "category": "Graphics",
-      "maintainer": "Paint Team <info@paint.app>"
+      "maintainer": "dvytvs <dvytvs@users.noreply.github.com>"
     },
     "flatpak": {
       "runtimeVersion": "25.08",

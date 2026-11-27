@@ -1,13 +1,26 @@
+/**
+ * Linux Paint — https://github.com/dvytvs/Paint-linux
+ * Copyright © 2026 dvytvs (https://github.com/dvytvs)
+ * SPDX-License-Identifier: GPL-3.0-only
+ */
 import React, { useState, useEffect, useRef } from 'react';
 import Toolbar from './components/Toolbar';
 import DrawingCanvas from './components/DrawingCanvas';
 import { Tool } from './types';
 import { t } from './i18n';
+import { canvasToDataUrl, extensionFromPath } from './saveImage';
 import { 
   MousePointer2, Square, Minus, X, Undo, Redo, Maximize2, ZoomIn, ZoomOut, Settings, Download,
   File, FolderOpen, Clock, Save, FileEdit, Printer, Share, Monitor, Image as ImageIcon, ChevronRight,
-  Scissors, Copy, ClipboardPaste, Check, Expand, PictureInPicture2
+  Scissors, Copy, ClipboardPaste, Check, Expand, PictureInPicture2, Info, Link as LinkIcon, Scale, User,
+  RotateCw, RotateCcw, FlipHorizontal, FlipVertical, Crop
 } from 'lucide-react';
+
+const ZOOM_MIN = 0.1;
+const ZOOM_MAX = 16;
+const ZOOM_STEP = 1.25;
+const APP_REPOSITORY = 'https://github.com/dvytvs/Paint-linux';
+const APP_AUTHOR_URL = 'https://github.com/dvytvs';
 
 export default function App() {
   const [currentTool, setCurrentTool] = useState<Tool>('pencil');
@@ -15,10 +28,14 @@ export default function App() {
   const [secondaryColor, setSecondaryColor] = useState<string>('#ffffff');
   const [activeColorSlot, setActiveColorSlot] = useState<1 | 2>(1);
   const [strokeSize, setStrokeSize] = useState<number>(3);
+  const [transparentSelection, setTransparentSelection] = useState<boolean>(false);
   const [canvasSize, setCanvasSize] = useState({ width: 1536, height: 960 });
   const [isFileMenuOpen, setIsFileMenuOpen] = useState(false);
   const [isEditMenuOpen, setIsEditMenuOpen] = useState(false);
   const [isViewMenuOpen, setIsViewMenuOpen] = useState(false);
+  const [isImageMenuOpen, setIsImageMenuOpen] = useState(false);
+  const [isHelpMenuOpen, setIsHelpMenuOpen] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const canvasContainerRef = useRef<HTMLDivElement>(null);
@@ -37,6 +54,20 @@ export default function App() {
     historyStepRef.current = historyStep;
   }, [history, historyStep]);
   const [zoom, setZoom] = useState<number>(1);
+  const [crispPixels, setCrispPixels] = useState<boolean>(false);
+
+  const zoomIn = () => setZoom(prev => Math.min(ZOOM_MAX, Math.round(prev * ZOOM_STEP * 100) / 100));
+  const zoomOut = () => setZoom(prev => Math.max(ZOOM_MIN, Math.round((prev / ZOOM_STEP) * 100) / 100));
+
+  // Scales the canvas so it fits the visible canvas area ("Fit to window").
+  const fitToWindow = () => {
+    const container = canvasContainerRef.current;
+    if (!container) return;
+    const availableW = Math.max(50, container.clientWidth - 64);
+    const availableH = Math.max(50, container.clientHeight - 64);
+    const next = Math.min(availableW / canvasSize.width, availableH / canvasSize.height, ZOOM_MAX);
+    setZoom(Math.max(ZOOM_MIN, Math.round(next * 100) / 100));
+  };
   const [isResizingCanvas, setIsResizingCanvas] = useState<'e' | 's' | 'se' | 'w' | 'n' | 'nw' | 'sw' | 'ne' | null>(null);
   const [resizeStart, setResizeStart] = useState<{x: number, y: number, w: number, h: number} | null>(null);
   const [liveResizeBox, setLiveResizeBox] = useState<{w: number, h: number, x: number, y: number} | null>(null);
@@ -52,6 +83,8 @@ export default function App() {
   const fileMenuRef = React.useRef<HTMLButtonElement>(null);
   const editMenuRef = React.useRef<HTMLButtonElement>(null);
   const viewMenuRef = React.useRef<HTMLButtonElement>(null);
+  const imageMenuRef = React.useRef<HTMLButtonElement>(null);
+  const helpMenuRef = React.useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const container = canvasContainerRef.current;
@@ -59,8 +92,8 @@ export default function App() {
     const handleWheel = (e: WheelEvent) => {
       if (e.ctrlKey) {
         e.preventDefault();
-        const delta = e.deltaY > 0 ? -0.1 : 0.1;
-        setZoom(prev => Math.max(0.1, Math.min(5, prev + delta)));
+        if (e.deltaY > 0) zoomOut();
+        else zoomIn();
       }
     };
     container.addEventListener('wheel', handleWheel, { passive: false });
@@ -254,6 +287,7 @@ export default function App() {
       if (e.ctrlKey && e.code === 'KeyQ') { e.preventDefault(); handleExit(); }
       if (e.ctrlKey && e.code === 'KeyW') { e.preventDefault(); window.dispatchEvent(new CustomEvent('clear-selection')); }
       if (e.ctrlKey && e.shiftKey && e.code === 'KeyX') { e.preventDefault(); window.dispatchEvent(new CustomEvent('request-crop')); }
+      if (e.ctrlKey && e.shiftKey && e.code === 'KeyI') { e.preventDefault(); window.dispatchEvent(new CustomEvent('request-invert')); }
       if (e.ctrlKey && e.code === 'KeyR') { e.preventDefault(); setShowRulers(prev => !prev); }
       if (e.ctrlKey && e.code === 'KeyG') { e.preventDefault(); setShowGridlines(prev => !prev); }
       if (e.code === 'F11') {
@@ -270,8 +304,8 @@ export default function App() {
   }, [currentFile, hasUnsavedChanges]);
 
   useEffect(() => {
-    const handleZoomIn = () => setZoom(prev => Math.min(5, prev + 0.25));
-    const handleZoomOut = () => setZoom(prev => Math.max(0.1, prev - 0.25));
+    const handleZoomIn = () => zoomIn();
+    const handleZoomOut = () => zoomOut();
     const handleResize = () => setShowProperties(true);
     const handleResizeCanvas = (e: any) => {
       if (e.detail && e.detail.width && e.detail.height) {
@@ -300,6 +334,15 @@ export default function App() {
       window.removeEventListener('resize-canvas', handleResizeCanvas);
     };
   }, []);
+
+  useEffect(() => {
+    if (!showAbout) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowAbout(false);
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [showAbout]);
 
   useEffect(() => {
     if (!isResizingCanvas || !resizeStart) return;
@@ -499,25 +542,43 @@ export default function App() {
 
   const handleSave = async (saveAs = false) => {
     window.dispatchEvent(new Event('commit-selection'));
-    if (window.electronAPI && canvasRef.current) {
-      const dataUrl = canvasRef.current.toDataURL('image/png');
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    if (window.electronAPI?.chooseSavePath && window.electronAPI?.writeFile) {
       const defaultPath = !saveAs && currentFile?.path ? currentFile.path : (currentFile?.name || 'Untitled.png');
-      const savedPath = await window.electronAPI.saveFile({ dataUrl, defaultPath });
-      if (savedPath) {
-        setCurrentFile(prev => ({ ...prev, name: savedPath.split('/').pop() || 'Untitled.png', path: savedPath }));
+      const filePath = await window.electronAPI.chooseSavePath(defaultPath);
+      if (!filePath) return;
+
+      // The chosen extension defines the real output format (PNG/JPEG/WebP/BMP).
+      const extension = extensionFromPath(filePath);
+      const dataUrl = canvasToDataUrl(canvas, extension);
+      const saved = await window.electronAPI.writeFile({ filePath, dataUrl });
+      if (saved) {
+        const name = filePath.split('/').pop() || 'Untitled.png';
+        const base64 = dataUrl.split(',')[1] || '';
+        setCurrentFile(prev => ({
+          ...prev,
+          name,
+          path: filePath,
+          date: new Date(),
+          size: Math.round(base64.length * 0.75)
+        }));
         setHasUnsavedChanges(false);
       }
-    } else if (canvasRef.current) {
-      // Fallback for browser environment
-      const dataUrl = canvasRef.current.toDataURL('image/png');
-      const a = document.createElement('a');
-      a.href = dataUrl;
-      a.download = currentFile?.name || 'Untitled.png';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setHasUnsavedChanges(false);
+      return;
     }
+
+    // Fallback for the browser environment
+    const extension = extensionFromPath(currentFile?.name || 'Untitled.png');
+    const dataUrl = canvasToDataUrl(canvas, extension);
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = currentFile?.name || 'Untitled.png';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setHasUnsavedChanges(false);
   };
 
   const handlePrint = async () => {
@@ -561,6 +622,8 @@ export default function App() {
     setIsFileMenuOpen(false);
     setIsEditMenuOpen(false);
     setIsViewMenuOpen(false);
+    setIsImageMenuOpen(false);
+    setIsHelpMenuOpen(false);
   };
 
   const MenuItem = ({ icon: Icon, label, shortcut, hasSubmenu, disabled, onClick }: any) => (
@@ -611,6 +674,8 @@ export default function App() {
             setIsFileMenuOpen(!isFileMenuOpen);
             setIsEditMenuOpen(false);
             setIsViewMenuOpen(false);
+            setIsImageMenuOpen(false);
+            setIsHelpMenuOpen(false);
           }}
         >
           {t('menu.file')}
@@ -622,6 +687,8 @@ export default function App() {
             setIsEditMenuOpen(!isEditMenuOpen);
             setIsFileMenuOpen(false);
             setIsViewMenuOpen(false);
+            setIsImageMenuOpen(false);
+            setIsHelpMenuOpen(false);
           }}
         >
           {t('menu.edit')}
@@ -633,9 +700,37 @@ export default function App() {
             setIsViewMenuOpen(!isViewMenuOpen);
             setIsFileMenuOpen(false);
             setIsEditMenuOpen(false);
+            setIsImageMenuOpen(false);
+            setIsHelpMenuOpen(false);
           }}
         >
           {t('menu.view')}
+        </button>
+        <button
+          ref={imageMenuRef}
+          className={`px-3 py-1.5 rounded cursor-pointer transition-colors ${isImageMenuOpen ? 'bg-white/10' : 'hover:bg-white/10'}`}
+          onClick={() => {
+            setIsImageMenuOpen(!isImageMenuOpen);
+            setIsFileMenuOpen(false);
+            setIsEditMenuOpen(false);
+            setIsViewMenuOpen(false);
+            setIsHelpMenuOpen(false);
+          }}
+        >
+          {t('menu.image')}
+        </button>
+        <button
+          ref={helpMenuRef}
+          className={`px-3 py-1.5 rounded cursor-pointer transition-colors ${isHelpMenuOpen ? 'bg-white/10' : 'hover:bg-white/10'}`}
+          onClick={() => {
+            setIsHelpMenuOpen(!isHelpMenuOpen);
+            setIsFileMenuOpen(false);
+            setIsEditMenuOpen(false);
+            setIsViewMenuOpen(false);
+            setIsImageMenuOpen(false);
+          }}
+        >
+          {t('menu.help')}
         </button>
         
         <div className="w-px h-4 bg-white/20 mx-2"></div>
@@ -661,7 +756,7 @@ export default function App() {
         <button className="p-1.5 hover:bg-white/10 rounded text-gray-300 mr-2" onClick={() => setShowProperties(true)}><Settings size={14} /></button>
 
         {/* Menus Overlay */}
-        {(isFileMenuOpen || isEditMenuOpen || isViewMenuOpen) && (
+        {(isFileMenuOpen || isEditMenuOpen || isViewMenuOpen || isImageMenuOpen || isHelpMenuOpen) && (
           <div className="fixed inset-0 z-40" onClick={closeMenus}></div>
         )}
 
@@ -713,11 +808,13 @@ export default function App() {
               left: viewMenuRef.current.getBoundingClientRect().left + window.scrollX
             }}
           >
-            <MenuItem icon={ZoomIn} label={t('action.zoomIn')} shortcut="Ctrl++" onClick={() => setZoom(prev => Math.min(5, prev + 0.25))} />
-            <MenuItem icon={ZoomOut} label={t('action.zoomOut')} shortcut="Ctrl+-" onClick={() => setZoom(prev => Math.max(0.1, prev - 0.25))} />
+            <MenuItem icon={ZoomIn} label={t('action.zoomIn')} shortcut="Ctrl++" onClick={zoomIn} />
+            <MenuItem icon={ZoomOut} label={t('action.zoomOut')} shortcut="Ctrl+-" onClick={zoomOut} />
+            <MenuItem icon={Maximize2} label={t('action.fitToWindow')} onClick={fitToWindow} />
             <MenuDivider />
             <MenuItem icon={showRulers ? Check : undefined} label={t('action.rulers')} shortcut="Ctrl+R" onClick={() => setShowRulers(prev => !prev)} />
             <MenuItem icon={showGridlines ? Check : undefined} label={t('action.gridlines')} shortcut="Ctrl+G" onClick={() => setShowGridlines(prev => !prev)} />
+            <MenuItem icon={crispPixels ? Check : undefined} label={t('action.pixelated')} onClick={() => setCrispPixels(prev => !prev)} />
             <MenuItem icon={showStatusBar ? Check : undefined} label={t('action.statusBar')} onClick={() => setShowStatusBar(prev => !prev)} />
             <MenuDivider />
             <MenuItem icon={Expand} label={t('action.fullscreen')} shortcut="F11" onClick={() => {
@@ -728,6 +825,41 @@ export default function App() {
               }
             }} />
             <MenuItem icon={showThumbnail ? Check : undefined} label={t('action.thumbnail')} onClick={() => setShowThumbnail(prev => !prev)} />
+          </div>
+        )}
+
+        {/* Image Menu Dropdown */}
+        {isImageMenuOpen && imageMenuRef.current && (
+          <div className="fixed bg-[#2b2b2b] border border-[#404040] rounded-md shadow-2xl z-50 py-1.5 text-gray-200"
+            style={{
+              top: imageMenuRef.current.getBoundingClientRect().bottom + window.scrollY,
+              left: imageMenuRef.current.getBoundingClientRect().left + window.scrollX
+            }}
+          >
+            <MenuItem icon={RotateCw} label={t('action.rotate90cw')} onClick={() => window.dispatchEvent(new CustomEvent('request-rotate', { detail: { angle: 90 } }))} />
+            <MenuItem icon={RotateCcw} label={t('action.rotate90ccw')} onClick={() => window.dispatchEvent(new CustomEvent('request-rotate', { detail: { angle: 270 } }))} />
+            <MenuItem icon={RotateCw} label={t('action.rotate180')} onClick={() => window.dispatchEvent(new CustomEvent('request-rotate', { detail: { angle: 180 } }))} />
+            <MenuDivider />
+            <MenuItem icon={FlipHorizontal} label={t('action.flipH')} onClick={() => window.dispatchEvent(new CustomEvent('request-flip-image', { detail: 'h' }))} />
+            <MenuItem icon={FlipVertical} label={t('action.flipV')} onClick={() => window.dispatchEvent(new CustomEvent('request-flip-image', { detail: 'v' }))} />
+            <MenuDivider />
+            <MenuItem icon={ImageIcon} label={t('action.invert')} shortcut="Ctrl+Shift+I" onClick={() => window.dispatchEvent(new CustomEvent('request-invert'))} />
+            <MenuDivider />
+            <MenuItem icon={Crop} label={t('action.crop')} shortcut="Ctrl+Shift+X" onClick={() => window.dispatchEvent(new CustomEvent('request-crop'))} />
+            <MenuItem icon={Maximize2} label={t('action.resize')} shortcut="Ctrl+E" onClick={() => setShowProperties(true)} />
+          </div>
+        )}
+
+        {/* Help Menu Dropdown */}
+        {isHelpMenuOpen && helpMenuRef.current && (
+          <div className="fixed bg-[#2b2b2b] border border-[#404040] rounded-md shadow-2xl z-50 py-1.5 text-gray-200 w-64"
+            style={{
+              top: helpMenuRef.current.getBoundingClientRect().bottom + window.scrollY,
+              left: helpMenuRef.current.getBoundingClientRect().left + window.scrollX
+            }}
+          >
+            <MenuItem icon={Info} label={t('action.about')} onClick={() => { setShowAbout(true); closeMenus(); }} />
+            <MenuItem icon={LinkIcon} label={t('action.repository')} onClick={() => { window.electronAPI?.openExternal(APP_REPOSITORY); closeMenus(); }} />
           </div>
         )}
       </div>
@@ -744,6 +876,8 @@ export default function App() {
         setActiveColorSlot={setActiveColorSlot}
         strokeSize={strokeSize}
         setStrokeSize={setStrokeSize}
+        transparentSelection={transparentSelection}
+        setTransparentSelection={setTransparentSelection}
       />
 
       {/* Canvas Area */}
@@ -805,11 +939,11 @@ export default function App() {
         
         {/* Vertical Stroke Slider */}
         <div 
-          className="absolute left-4 top-1/2 -translate-y-1/2 w-8 h-64 bg-[#2d2d2d] rounded-full border border-white/10 flex flex-col items-center py-4 shadow-lg z-10"
+          className="fixed left-4 top-1/2 -translate-y-1/2 w-8 h-64 bg-[#2d2d2d] rounded-full border border-white/10 flex flex-col items-center py-4 shadow-lg z-[46]"
           onWheel={(e) => {
             e.stopPropagation();
             const delta = e.deltaY > 0 ? -1 : 1;
-            setStrokeSize(prev => Math.max(1, Math.min(50, prev + delta)));
+            setStrokeSize(prev => Math.max(1, Math.min(100, prev + delta)));
           }}
         >
            <div className="w-4 h-1 bg-gray-400 rounded-full mb-2"></div>
@@ -817,7 +951,7 @@ export default function App() {
               <input 
                 type="range" 
                 min="1" 
-                max="50" 
+                max="100" 
                 value={strokeSize}
                 onChange={(e) => setStrokeSize(parseInt(e.target.value))}
                 style={{ WebkitAppearance: 'slider-vertical' }}
@@ -884,7 +1018,8 @@ export default function App() {
                 width: canvasSize.width, 
                 height: canvasSize.height,
                 transform: `scale(${zoom})`,
-                transformOrigin: 'top left'
+                transformOrigin: 'top left',
+                imageRendering: crispPixels ? 'pixelated' : 'auto'
               }}
               onMouseMove={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect();
@@ -917,6 +1052,7 @@ export default function App() {
                   window.dispatchEvent(new CustomEvent('add-custom-color', { detail: color }));
                 }}
                 pastedImage={pastedImage}
+                transparentSelection={transparentSelection}
               />
               
               {liveResizeBox && (
@@ -985,17 +1121,17 @@ export default function App() {
           <div className="flex items-center gap-3">
             <Maximize2 size={12} className="cursor-pointer hover:text-white mr-2" onClick={() => setZoom(1)} />
             <span className="w-10 text-right">{Math.round(zoom * 100)}%</span>
-            <ZoomOut size={14} className="cursor-pointer hover:text-white" onClick={() => setZoom(prev => Math.max(0.1, prev - 0.1))} />
+            <ZoomOut size={14} className="cursor-pointer hover:text-white" onClick={zoomOut} />
             <input 
               type="range" 
-              min="0.1" 
-              max="5" 
+              min={ZOOM_MIN} 
+              max={ZOOM_MAX} 
               step="0.1" 
               value={zoom} 
               onChange={(e) => setZoom(parseFloat(e.target.value))}
               className="w-24 h-1 bg-gray-600 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-gray-300 [&::-webkit-slider-thumb]:rounded-sm"
             />
-            <ZoomIn size={14} className="cursor-pointer hover:text-white" onClick={() => setZoom(prev => Math.min(5, prev + 0.1))} />
+            <ZoomIn size={14} className="cursor-pointer hover:text-white" onClick={zoomIn} />
           </div>
         </div>
       )}
@@ -1089,6 +1225,74 @@ export default function App() {
               <button className="px-4 py-1.5 bg-[#4cc2ff] text-black hover:bg-[#3ab0ff] rounded font-medium" onClick={() => confirmExit(true)}>{t('action.save')}</button>
               <button className="px-4 py-1.5 bg-white/10 hover:bg-white/20 rounded" onClick={() => confirmExit(false)}>{t('action.dontSave')}</button>
               <button className="px-4 py-1.5 bg-white/10 hover:bg-white/20 rounded" onClick={() => setShowExitPrompt(false)}>{t('ui.cancel')}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAbout && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60" onClick={() => setShowAbout(false)}>
+          <div
+            className="bg-[#2b2b2b] border border-[#404040] rounded-lg shadow-2xl w-[420px] p-6 text-gray-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center flex-shrink-0">
+                <div className="w-7 h-7 bg-white rounded-full opacity-90"></div>
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-xl font-semibold">
+                  Paint <span className="text-gray-400 text-sm font-normal">v{__APP_VERSION__}</span>
+                </h2>
+                <p className="text-xs text-gray-400 mt-1">{t('about.description')}</p>
+              </div>
+            </div>
+
+            <div className="mt-5 space-y-2 text-sm">
+              <div className="flex items-center gap-2 flex-wrap">
+                <User size={14} className="text-gray-400" />
+                <span className="text-gray-400">{t('about.author')}:</span>
+                <button
+                  className="text-[#4cc2ff] hover:underline"
+                  onClick={() => window.electronAPI?.openExternal(APP_AUTHOR_URL)}
+                  title={APP_AUTHOR_URL}
+                >
+                  dvytvs
+                </button>
+                <span className="text-gray-500 text-xs">github.com/dvytvs</span>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <LinkIcon size={14} className="text-gray-400" />
+                <span className="text-gray-400">{t('about.repository')}:</span>
+                <button
+                  className="text-[#4cc2ff] hover:underline text-left break-all"
+                  onClick={() => window.electronAPI?.openExternal(APP_REPOSITORY)}
+                  title={APP_REPOSITORY}
+                >
+                  github.com/dvytvs/Paint-linux
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <Scale size={14} className="text-gray-400" />
+                <span className="text-gray-400">{t('about.license')}:</span>
+                <span>GPL-3.0</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Info size={14} className="text-gray-400" />
+                <span className="text-gray-400">{t('about.copyright')}:</span>
+                <span>© 2026 dvytvs</span>
+              </div>
+            </div>
+
+            <p className="mt-4 text-xs text-gray-500">{t('about.madeWith')}</p>
+
+            <div className="mt-6 flex justify-end">
+              <button
+                className="px-4 py-1.5 bg-[#4cc2ff] text-black hover:bg-[#3ab0ff] rounded font-medium"
+                onClick={() => setShowAbout(false)}
+              >
+                {t('ui.close')}
+              </button>
             </div>
           </div>
         </div>

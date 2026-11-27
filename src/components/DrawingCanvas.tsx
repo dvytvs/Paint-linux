@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Tool } from '../types';
 import { Scissors, Copy, ClipboardPaste, Crop, Maximize2, Trash2, RotateCw, ArrowLeftRight, Image as ImageIcon, SquareDashed, LassoSelect, Sparkles } from 'lucide-react';
 import { t } from '../i18n';
@@ -17,9 +18,10 @@ interface CanvasProps {
   pastedImage?: { src: string, id: number } | null;
   showRulers?: boolean;
   showGridlines?: boolean;
+  transparentSelection?: boolean;
 }
 
-export default function DrawingCanvas({ currentTool, setCurrentTool, primaryColor, secondaryColor, strokeSize, width, height, canvasRef, onDraw, onColorPick, pastedImage, showRulers, showGridlines }: CanvasProps) {
+export default function DrawingCanvas({ currentTool, setCurrentTool, primaryColor, secondaryColor, strokeSize, width, height, canvasRef, onDraw, onColorPick, pastedImage, showRulers, showGridlines, transparentSelection }: CanvasProps) {
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPos, setStartPos] = useState<{x: number, y: number} | null>(null);
   const [snapshot, setSnapshot] = useState<ImageData | null>(null);
@@ -93,6 +95,26 @@ export default function DrawingCanvas({ currentTool, setCurrentTool, primaryColo
     path?: {x: number, y: number}[];
   } | null>(null);
   const [contextMenu, setContextMenu] = useState<{x: number, y: number} | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  // Keeps the floating context menu inside the visible viewport. The canvas is rendered
+  // inside a CSS-transformed (scaled) container when zoomed, so the menu must be portaled
+  // to document.body and clamped to the window bounds here.
+  useLayoutEffect(() => {
+    const menu = contextMenuRef.current;
+    if (!contextMenu || !menu) return;
+    const margin = 8;
+    const rect = menu.getBoundingClientRect();
+    let left = contextMenu.x;
+    let top = contextMenu.y;
+    if (left + rect.width > window.innerWidth - margin) left = window.innerWidth - rect.width - margin;
+    if (top + rect.height > window.innerHeight - margin) top = window.innerHeight - rect.height - margin;
+    left = Math.max(margin, left);
+    top = Math.max(margin, top);
+    if (Math.abs(left - contextMenu.x) > 0.5 || Math.abs(top - contextMenu.y) > 0.5) {
+      setContextMenu({ x: left, y: top });
+    }
+  }, [contextMenu]);
 
   const commitSelection = () => {
     if (selection?.image && canvasRef.current) {
@@ -105,32 +127,38 @@ export default function DrawingCanvas({ currentTool, setCurrentTool, primaryColo
     setSelection(null);
   };
 
-  const rotateSelection = () => {
+  const rotateSelectionBy = (angle: number) => {
     if (!selection) return;
     const img = selection.image || extractSelection(true);
     if (!img) return;
 
+    const swap = angle === 90 || angle === 270;
+    const outW = swap ? selection.h : selection.w;
+    const outH = swap ? selection.w : selection.h;
+
     const canvas = document.createElement('canvas');
-    canvas.width = selection.h;
-    canvas.height = selection.w;
+    canvas.width = outW;
+    canvas.height = outH;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    ctx.translate(canvas.width / 2, canvas.height / 2);
-    ctx.rotate(Math.PI / 2);
+    ctx.translate(outW / 2, outH / 2);
+    ctx.rotate((angle * Math.PI) / 180);
     ctx.drawImage(img, -selection.w / 2, -selection.h / 2);
 
     setSelection({
       ...selection,
-      x: selection.x + selection.w / 2 - selection.h / 2,
-      y: selection.y + selection.h / 2 - selection.w / 2,
-      w: selection.h,
-      h: selection.w,
+      x: selection.x + selection.w / 2 - outW / 2,
+      y: selection.y + selection.h / 2 - outH / 2,
+      w: outW,
+      h: outH,
       image: canvas,
       path: undefined // Clear path as it's no longer valid
     });
     setContextMenu(null);
   };
+
+  const rotateSelection = () => rotateSelectionBy(90);
 
   const flipSelection = (horizontal: boolean) => {
     if (!selection) return;
@@ -158,6 +186,29 @@ export default function DrawingCanvas({ currentTool, setCurrentTool, primaryColo
       path: undefined // Clear path as it's no longer valid
     });
     setContextMenu(null);
+  };
+
+  // "Transparent selection" (paint-style color key): pixels matching the background
+  // (secondary) color are made fully transparent, so the content under the selection
+  // stays visible while moving / committing it.
+  const applyTransparentColor = (source: HTMLCanvasElement) => {
+    if (!transparentSelection) return source;
+    const ctx = source.getContext('2d');
+    if (!ctx) return source;
+    const match = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(secondaryColor);
+    if (!match) return source;
+    const targetR = parseInt(match[1], 16);
+    const targetG = parseInt(match[2], 16);
+    const targetB = parseInt(match[3], 16);
+    const imageData = ctx.getImageData(0, 0, source.width, source.height);
+    const data = imageData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i + 3] > 0 && data[i] === targetR && data[i + 1] === targetG && data[i + 2] === targetB) {
+        data[i + 3] = 0;
+      }
+    }
+    ctx.putImageData(imageData, 0, 0);
+    return source;
   };
 
   const extractSelection = (fillOriginal: boolean = false) => {
@@ -206,7 +257,7 @@ export default function DrawingCanvas({ currentTool, setCurrentTool, primaryColo
         onDraw(canvas.toDataURL());
       }
     }
-    return tempCanvas;
+    return applyTransparentColor(tempCanvas);
   };
 
   useEffect(() => {
@@ -237,6 +288,7 @@ export default function DrawingCanvas({ currentTool, setCurrentTool, primaryColo
         const tempCtx = tempCanvas.getContext('2d');
         if (tempCtx) {
           tempCtx.drawImage(img, 0, 0);
+          applyTransparentColor(tempCanvas);
           setSelection({
             active: true,
             x: 0,
@@ -287,7 +339,7 @@ export default function DrawingCanvas({ currentTool, setCurrentTool, primaryColo
               ctx.setLineDash([]);
               ctx.fillStyle = '#ffffff';
               ctx.strokeStyle = '#0078d7';
-              const handleSize = 6;
+              const handleSize = Math.max(2, Math.min(6, Math.min(Math.abs(selection.w), Math.abs(selection.h)) / 5));
               const handles = [
                 { x: selection.x - handleSize/2, y: selection.y - handleSize/2 },
                 { x: selection.x + selection.w/2 - handleSize/2, y: selection.y - handleSize/2 },
@@ -481,7 +533,9 @@ export default function DrawingCanvas({ currentTool, setCurrentTool, primaryColo
 
     if (currentTool === 'select' || currentTool === 'lasso-select') {
       if (selection && selection.active) {
-        const handleSize = 20; // much larger hit area
+        // Keep the hit area small enough for tiny selections, otherwise the handles
+        // cover the whole selection and it cannot be moved by dragging.
+        const handleSize = Math.max(6, Math.min(20, Math.min(Math.abs(selection.w), Math.abs(selection.h)) / 2));
         const hs = handleSize / 2;
         const handles = [
           { id: 'nw', x: selection.x - hs, y: selection.y - hs },
@@ -1241,43 +1295,73 @@ export default function DrawingCanvas({ currentTool, setCurrentTool, primaryColo
       }
     };
 
-    const handleRequestRotate = () => {
+    const handleRequestRotate = (e?: Event) => {
+      const requested = (e as CustomEvent | undefined)?.detail?.angle;
+      const angle = typeof requested === 'number' ? ((requested % 360) + 360) % 360 : 90;
+
       if (selection) {
-        rotateSelection();
-      } else {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-        
-        const oldWidth = canvas.width;
-        const oldHeight = canvas.height;
-        const imgData = ctx.getImageData(0, 0, oldWidth, oldHeight);
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = oldWidth;
-        tempCanvas.height = oldHeight;
-        const tempCtx = tempCanvas.getContext('2d');
-        if (tempCtx) {
-          tempCtx.putImageData(imgData, 0, 0);
-          
-          const newWidth = oldHeight;
-          const newHeight = oldWidth;
-          
-          const finalCanvas = document.createElement('canvas');
-          finalCanvas.width = newWidth;
-          finalCanvas.height = newHeight;
-          const finalCtx = finalCanvas.getContext('2d');
-          if (finalCtx) {
-            finalCtx.fillStyle = '#ffffff';
-            finalCtx.fillRect(0, 0, newWidth, newHeight);
-            finalCtx.translate(newWidth / 2, newHeight / 2);
-            finalCtx.rotate(Math.PI / 2);
-            finalCtx.drawImage(tempCanvas, -oldWidth / 2, -oldHeight / 2);
-            
-            window.dispatchEvent(new CustomEvent('resize-canvas', { detail: { width: newWidth, height: newHeight, dataUrl: finalCanvas.toDataURL() } }));
-          }
-        }
+        rotateSelectionBy(angle);
+        return;
       }
+
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      const oldWidth = canvas.width;
+      const oldHeight = canvas.height;
+      const swap = angle === 90 || angle === 270;
+      const newWidth = swap ? oldHeight : oldWidth;
+      const newHeight = swap ? oldWidth : oldHeight;
+
+      const finalCanvas = document.createElement('canvas');
+      finalCanvas.width = newWidth;
+      finalCanvas.height = newHeight;
+      const finalCtx = finalCanvas.getContext('2d');
+      if (!finalCtx) return;
+
+      finalCtx.fillStyle = '#ffffff';
+      finalCtx.fillRect(0, 0, newWidth, newHeight);
+      finalCtx.translate(newWidth / 2, newHeight / 2);
+      finalCtx.rotate((angle * Math.PI) / 180);
+      finalCtx.drawImage(canvas, -oldWidth / 2, -oldHeight / 2);
+
+      window.dispatchEvent(new CustomEvent('resize-canvas', {
+        detail: { width: newWidth, height: newHeight, dataUrl: finalCanvas.toDataURL() }
+      }));
+    };
+
+    const flipWholeImage = (horizontal: boolean) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = canvas.width;
+      tempCanvas.height = canvas.height;
+      const tempCtx = tempCanvas.getContext('2d');
+      if (!tempCtx) return;
+      tempCtx.drawImage(canvas, 0, 0);
+
+      ctx.save();
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.translate(horizontal ? canvas.width : 0, horizontal ? 0 : canvas.height);
+      ctx.scale(horizontal ? -1 : 1, horizontal ? 1 : -1);
+      ctx.drawImage(tempCanvas, 0, 0);
+      ctx.restore();
+      onDraw(canvas.toDataURL());
+    };
+
+    const handleRequestFlipImage = (e?: Event) => {
+      const direction = (e as CustomEvent | undefined)?.detail;
+      const horizontal = direction !== 'v';
+      if (selection) flipSelection(horizontal);
+      else flipWholeImage(horizontal);
+    };
+
+    const handleRequestInvert = () => {
+      handleInvertColor();
     };
 
     const handleRequestSelectAll = () => {
@@ -1293,8 +1377,9 @@ export default function DrawingCanvas({ currentTool, setCurrentTool, primaryColo
         startY: 0,
         startW: width,
         startH: height,
-        isResizing: false,
-        resizeHandle: null
+        isResizing: null,
+        image: null,
+        path: undefined
       });
     };
 
@@ -1366,6 +1451,8 @@ export default function DrawingCanvas({ currentTool, setCurrentTool, primaryColo
     window.addEventListener('request-paste', handleRequestPaste);
     window.addEventListener('request-crop', handleRequestCrop);
     window.addEventListener('request-rotate', handleRequestRotate);
+    window.addEventListener('request-flip-image', handleRequestFlipImage);
+    window.addEventListener('request-invert', handleRequestInvert);
     window.addEventListener('request-select-all', handleRequestSelectAll);
     window.addEventListener('clear-selection', handleClearSelection);
     window.addEventListener('request-undo', handleRequestUndo);
@@ -1377,6 +1464,8 @@ export default function DrawingCanvas({ currentTool, setCurrentTool, primaryColo
       window.removeEventListener('request-paste', handleRequestPaste);
       window.removeEventListener('request-crop', handleRequestCrop);
       window.removeEventListener('request-rotate', handleRequestRotate);
+      window.removeEventListener('request-flip-image', handleRequestFlipImage);
+      window.removeEventListener('request-invert', handleRequestInvert);
       window.removeEventListener('request-select-all', handleRequestSelectAll);
       window.removeEventListener('clear-selection', handleClearSelection);
       window.removeEventListener('request-undo', handleRequestUndo);
@@ -1386,18 +1475,40 @@ export default function DrawingCanvas({ currentTool, setCurrentTool, primaryColo
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Delete') {
-        const activeTag = document.activeElement?.tagName.toLowerCase();
-        if (activeTag === 'input' || activeTag === 'textarea') return;
-        
-        if (selection && selection.active) {
-          handleDelete();
-        }
+      const activeTag = document.activeElement?.tagName.toLowerCase();
+      if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') return;
+
+      if (e.key === 'Escape' && contextMenu) {
+        setContextMenu(null);
+        return;
+      }
+
+      const dx = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0;
+      const dy = e.key === 'ArrowUp' ? -1 : e.key === 'ArrowDown' ? 1 : 0;
+
+      // Arrow keys should nudge the floating selection (like in Windows Paint) instead of
+      // scrolling the canvas container.
+      if (selection && selection.active && (dx !== 0 || dy !== 0)) {
+        e.preventDefault();
+        if (selection.isMoving || selection.isResizing) return;
+        const step = e.shiftKey ? 10 : 1;
+        const image = selection.image || extractSelection(true);
+        setSelection(prev => prev ? {
+          ...prev,
+          x: prev.x + dx * step,
+          y: prev.y + dy * step,
+          image
+        } : prev);
+        return;
+      }
+
+      if (e.key === 'Delete' && selection && selection.active) {
+        handleDelete();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selection]);
+  }, [selection, contextMenu, secondaryColor, transparentSelection]);
 
   const handleCopy = () => {
     const img = selection?.image || extractSelection(false);
@@ -1462,6 +1573,26 @@ export default function DrawingCanvas({ currentTool, setCurrentTool, primaryColo
   };
 
   const handleInvertColor = () => {
+    // No selection: invert the whole image (Image -> Invert colors, like in Paint).
+    if (!selection && canvasRef.current) {
+      const ctx = canvasRef.current.getContext('2d');
+      if (ctx) {
+        const imgData = ctx.getImageData(0, 0, canvasRef.current.width, canvasRef.current.height);
+        const data = imgData.data;
+        for (let i = 0; i < data.length; i += 4) {
+          if (data[i + 3] > 0) {
+            data[i] = 255 - data[i];
+            data[i + 1] = 255 - data[i + 1];
+            data[i + 2] = 255 - data[i + 2];
+          }
+        }
+        ctx.putImageData(imgData, 0, 0);
+        onDraw(canvasRef.current.toDataURL());
+      }
+      setContextMenu(null);
+      return;
+    }
+
     if (selection && canvasRef.current) {
       const img = selection.image || extractSelection(false);
       if (img) {
@@ -1756,9 +1887,10 @@ export default function DrawingCanvas({ currentTool, setCurrentTool, primaryColo
         </div>
       )}
 
-      {contextMenu && (
-        <div 
-          className="fixed z-[100] w-64 bg-[#2b2b2b] border border-[#404040] rounded-md shadow-2xl py-1 text-gray-200 text-sm select-none"
+      {contextMenu && createPortal(
+        <div
+          ref={contextMenuRef}
+          className="fixed z-[100] w-64 max-h-[calc(100vh-16px)] overflow-y-auto bg-[#2b2b2b] border border-[#404040] rounded-md shadow-2xl py-1 text-gray-200 text-sm select-none"
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onContextMenu={(e) => e.preventDefault()}
         >
@@ -1822,7 +1954,8 @@ export default function DrawingCanvas({ currentTool, setCurrentTool, primaryColo
             <div className="flex items-center"><ImageIcon size={16} className="mr-3" /> {t('action.invert')}</div>
             <span className="text-xs text-gray-400">Ctrl+Shift+I</span>
           </button>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

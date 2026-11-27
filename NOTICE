@@ -1,0 +1,25 @@
+# Лицензия и указание авторства / License and attribution
+
+**Проект:** Linux Paint — https://github.com/dvytvs/Paint-linux
+**Автор:** dvytvs — https://github.com/dvytvs
+**Copyright © 2026 dvytvs. Все права защищены.**
+
+Проект распространяется под **GNU General Public License v3.0** — полный текст в файле
+[`LICENSE`](./LICENSE). SPDX: `GPL-3.0-only`.
+
+Дополнительно, в соответствии с §7(b) GNU GPL v3.0, действует следующее **дополнительное
+условие**: при распространении проекта, его изменённых версий и производных работ
+**запрещается удалять или скрывать уведомления об авторстве** (имя/псевдоним автора
+`dvytvs`, ссылку на https://github.com/dvytvs и этот файл). Это условие не ограничивает
+права, предоставленные GPL v3.0, и не делает лицензию более строгой — оно лишь требует
+сохранять указание автора.
+
+---
+
+The project is licensed under the **GNU General Public License v3.0** (see [`LICENSE`](./LICENSE)),
+SPDX: `GPL-3.0-only`.
+
+As an additional term under §7(b) of the GNU GPL v3.0, **you must not remove or hide the
+author attribution** (the name `dvytvs`, the link https://github.com/dvytvs and this file)
+when redistributing the project, modified versions or derivative works. This additional term
+does not restrict any rights granted by the GPL v3.0.

@@ -12,15 +12,34 @@
 
 **Cross-platform graphics editor inspired by Windows 11 Paint**
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com)
-[![License](https://img.shields.io/badge/license-GPL3.0/MIT-green.svg)](https://github.com)
-[![Electron](https://img.shields.io/badge/Electron-40.8.0-47848F.svg?logo=electron)](https://www.electronjs.org/)
+[![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](https://github.com/dvytvs/Paint-linux)
+[![License](https://img.shields.io/badge/license-GPL--3.0-green.svg)](./LICENSE)
+[![Electron](https://img.shields.io/badge/Electron-42.5.0-47848F.svg?logo=electron)](https://www.electronjs.org/)
 [![React](https://img.shields.io/badge/React-19.0.0-61DAFB.svg?logo=react)](https://reactjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8.2-3178C6.svg?logo=typescript)](https://www.typescriptlang.org/)
 
 [English](#english) | [Русский](#русский)
 
+**Автор / Author:** [dvytvs](https://github.com/dvytvs) · **Репозиторий / Repository:** [github.com/dvytvs/Paint-linux](https://github.com/dvytvs/Paint-linux) · **Лицензия / License:** GPL-3.0
+
 </div>
+
+---
+
+## 🆕 Что нового в 1.3.0 / What's new in 1.3.0
+
+- 🖥️ Нативный **Wayland без XWayland** (поддержка X11 сохранена) — *native Wayland backend, X11 still supported*
+- 🔍 **Зум до 1600%** — *zoom up to 1600%*
+- 🧱 Тумблер **«Резкие пиксели»** (без сглаживания при увеличении) — *crisp pixels / no smoothing*
+- 🖌️ Удобная **толщина кисти**: пресеты + числовое поле, до 100 px — *brush size presets + numeric input*
+- 🖼️ Меню **«Изображение»**: поворот 90°/180°/270°, отражение всего изображения, инверсия цветов — *Image menu with rotate/flip/invert*
+- 💾 **«Сохранить как»** пишет настоящий PNG/JPEG/WebP/BMP (раньше всегда сохранялся PNG) — *real format conversion*
+- 🪟 **«По размеру окна»** — *fit to window*
+- 🐞 Палитра больше не превращается в градиент при выборе цвета; ползунок размера кисти не уезжает при прокрутке; ручки выделения не перекрывают маленькие выделения
+- ℹ️ Окно **«О программе»** (Справка → О программе Paint) — *About dialog*
+- 📦 Отдельные команды сборки под каждый формат пакета — *per-format build scripts*
+- 🐞 Исправлены: стрелки двигают выделение, контекстное меню при зуме, прозрачное выделение
+- 📜 Лицензия: **GPL-3.0-only** с обязательным сохранением указания автора (см. [`NOTICE`](./NOTICE))
 
 ---
 
@@ -124,7 +143,7 @@
 ### 🛠️ Технологии
 
 - **Frontend:** React 19, TypeScript, Tailwind CSS 4, Motion (анимации)
-- **Desktop:** Electron 40, Vite 6
+- **Desktop:** Electron 42, Vite 6
 - **Icons:** Lucide React
 - **Сборка:** electron-builder (AppImage, deb, snap, pacman, flatpak, tar.gz)
 
@@ -164,6 +183,37 @@ npm run dist
 - `.flatpak` — для Flatpak
 - `.tar.gz` — архив
 
+**Про иконки и `dist-electron`:** исходники иконок приложения лежат в `build/icons/linux/`
+(они коммитятся в репозиторий). Папка `dist-electron/` — это результат сборки
+(пакеты, `linux-unpacked/` и автоматически сгенерированный `dist-electron/.icon-set`),
+поэтому она целиком в `.gitignore`. `.icon-set` не нужно хранить в git — electron-builder
+создаёт его из `build/icons/linux/` при сборке пакетов.
+
+### 🖥️ Wayland и X11
+
+Приложение автоматически определяет графическую сессию:
+
+- **Wayland** (`XDG_SESSION_TYPE=wayland` или задан `WAYLAND_DISPLAY`) — запускается на нативном Wayland-бэкенде, **без XWayland**, с включённым Wayland IME (корректный ввод текста в инструменте «Текст», в том числе CJK).
+- **X11** — используется обычный X11-бэкенд, поддержка сохранена.
+
+Бэкенд можно выбрать принудительно (переменная окружения или флаг командной строки):
+
+```bash
+# Нативный Wayland
+ELECTRON_OZONE_PLATFORM_HINT=wayland npm start
+# X11 / XWayland
+ELECTRON_OZONE_PLATFORM_HINT=x11 npm start
+
+# Для собранного приложения можно так:
+./Paint-1.2.0.AppImage --ozone-platform=wayland
+```
+
+Проверить, какой бэкенд выбран, можно так (в консоль печатается строка `[paint] display backend: ...`):
+
+```bash
+PAINT_DEBUG_DISPLAY=1 npm start
+```
+
 ### 📁 Структура проекта
 
 ```
@@ -197,7 +247,16 @@ linux-paint/
 | `npm run build` | Сборка production версии |
 | `npm run preview` | Предпросмотр сборки |
 | `npm run start` | Запуск Electron + Vite dev server |
-| `npm run dist` | Сборка дистрибутивов |
+| `npm run dist` | Сборка **всех** дистрибутивов |
+| `npm run dist:appimage` | Только `.AppImage` |
+| `npm run dist:deb` | Только `.deb` (Debian/Ubuntu) |
+| `npm run dist:rpm` | Только `.rpm` (Fedora/openSUSE) |
+| `npm run dist:snap` | Только `.snap` |
+| `npm run dist:pacman` | Только `.pacman` (Arch) |
+| `npm run dist:flatpak` | Только `.flatpak` |
+| `npm run dist:tar` | Только `.tar.gz` |
+| `npm run dist:dir` | Неупакованная сборка (`linux-unpacked/`, для быстрой проверки) |
+| `npm run dist:rpm:docker` | `.rpm` в Docker-контейнере |
 | `npm run clean` | Очистка папки dist |
 | `npm run lint` | Проверка TypeScript |
 
@@ -300,7 +359,7 @@ Support for 6 languages:
 ### ️ Tech Stack
 
 - **Frontend:** React 19, TypeScript, Tailwind CSS 4, Motion (animations)
-- **Desktop:** Electron 40, Vite 6
+- **Desktop:** Electron 42, Vite 6
 - **Icons:** Lucide React
 - **Build:** electron-builder (AppImage, deb, snap, pacman, flatpak, tar.gz)
 
@@ -340,6 +399,37 @@ After running `npm run dist`, the following files will be created in `dist-elect
 - `.flatpak` — for Flatpak
 - `.tar.gz` — archive
 
+**About icons and `dist-electron`:** the application icon sources live in `build/icons/linux/`
+(they are committed to the repository). `dist-electron/` is build output (packages,
+`linux-unpacked/` and the generated `dist-electron/.icon-set`), so it is fully git-ignored.
+`.icon-set` does not need to be committed — electron-builder generates it from
+`build/icons/linux/` when packaging.
+
+### 🖥️ Wayland and X11
+
+The app detects the graphical session automatically:
+
+- **Wayland** (`XDG_SESSION_TYPE=wayland` or `WAYLAND_DISPLAY` is set) — runs on the native Wayland backend, **without XWayland**, with Wayland IME enabled (proper text input in the Text tool, including CJK).
+- **X11** — keeps using the regular X11 backend, support is preserved.
+
+The backend can be forced via an environment variable or a command line flag:
+
+```bash
+# Native Wayland
+ELECTRON_OZONE_PLATFORM_HINT=wayland npm start
+# X11 / XWayland
+ELECTRON_OZONE_PLATFORM_HINT=x11 npm start
+
+# For a packaged build:
+./Paint-1.2.0.AppImage --ozone-platform=wayland
+```
+
+To see which backend was picked (prints `[paint] display backend: ...`):
+
+```bash
+PAINT_DEBUG_DISPLAY=1 npm start
+```
+
 ### 📁 Project Structure
 
 ```
@@ -373,7 +463,16 @@ linux-paint/
 | `npm run build` | Build production version |
 | `npm run preview` | Preview build |
 | `npm run start` | Run Electron + Vite dev server |
-| `npm run dist` | Build distributions |
+| `npm run dist` | Build **all** distributions |
+| `npm run dist:appimage` | `.AppImage` only |
+| `npm run dist:deb` | `.deb` only (Debian/Ubuntu) |
+| `npm run dist:rpm` | `.rpm` only (Fedora/openSUSE) |
+| `npm run dist:snap` | `.snap` only |
+| `npm run dist:pacman` | `.pacman` only (Arch) |
+| `npm run dist:flatpak` | `.flatpak` only |
+| `npm run dist:tar` | `.tar.gz` only |
+| `npm run dist:dir` | Unpacked build (`linux-unpacked/`, quick check) |
+| `npm run dist:rpm:docker` | `.rpm` inside a Docker container |
 | `npm run clean` | Clean dist folder |
 | `npm run lint` | TypeScript check |
 
@@ -383,7 +482,14 @@ linux-paint/
 
 ### 📄 License / Лицензия
 
-MIT License
+Проект распространяется под **GNU General Public License v3.0** (SPDX: `GPL-3.0-only`):
+
+- [`LICENSE`](./LICENSE) — полный текст GNU GPL v3.0
+- [`NOTICE`](./NOTICE) — уведомление об авторстве. Согласно §7(b) GPL v3.0 **упоминание автора (`dvytvs`) обязательно сохраняется** при распространении проекта, изменённых версий и производных работ.
+
+The project is licensed under the **GNU GPL v3.0**; author attribution (`dvytvs`) must be preserved — see [`NOTICE`](./NOTICE).
+
+**Автор / Author:** [dvytvs](https://github.com/dvytvs) · **Репозиторий / Repository:** [github.com/dvytvs/Paint-linux](https://github.com/dvytvs/Paint-linux)
 
 **Linux Paint** — создано с ❤️ для Linux-сообщества
 
